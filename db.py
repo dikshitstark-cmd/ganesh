@@ -13,13 +13,14 @@ from pathlib import Path
 from werkzeug.security import generate_password_hash, check_password_hash
 
 BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = BASE_DIR / "receipts.db"
+
+DB_PATH = os.path.join("/tmp", "receipts.db")
 
 RECEIPT_PREFIX = "GU"  # Ganesh Utsav
 
 
 def get_conn():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
