@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - Ganesh Utsav Receipts{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <h1>Receipt Dashboard</h1>
+  <div class="page-head-actions">
+    <a class="btn btn-primary" href="{{ url_for('new_receipt') }}">+ New Receipt</a>
+    <a class="btn btn-outline" href="{{ url_for('export_excel') }}">Export Excel</a>
+    <a class="btn btn-outline" href="{{ url_for('export_csv') }}">Export CSV</a>
+  </div>
+</div>
+
+<div class="stat-cards">
+  <div class="stat-card">
+    <div class="stat-label">Receipts</div>
+    <div class="stat-value">{{ totals.count }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Total Amount</div>
+    <div class="stat-value">₹{{ "%.2f"|format(totals.total) }}</div>
+  </div>
+  <div class="stat-card stat-good">
+    <div class="stat-label">Collected</div>
+    <div class="stat-value">₹{{ "%.2f"|format(totals.paid) }}</div>
+  </div>
+  <div class="stat-card stat-bad">
+    <div class="stat-label">Due</div>
+    <div class="stat-value">₹{{ "%.2f"|format(totals.due) }}</div>
+  </div>
+</div>
+
+<form class="filter-bar" method="get" action="{{ url_for('dashboard') }}">
+  <input type="text" name="q" value="{{ search }}" placeholder="Search by name or receipt no...">
+  <select name="status">
+    {% for s in statuses %}
+      <option value="{{ s }}" {% if s == status %}selected{% endif %}>{{ s }}</option>
+    {% endfor %}
+  </select>
+  <button class="btn btn-primary" type="submit">Filter</button>
+  {% if search or status != "All" %}
+    <a class="btn btn-outline" href="{{ url_for('dashboard') }}">Clear</a>
+  {% endif %}
+</form>
+
+<form id="bulkPrintForm" onsubmit="return submitBulkPrint(event)">
+  <div class="bulk-toolbar">
+    <label><input type="checkbox" id="selectAll" onclick="toggleSelectAll(this)"> Select All</label>
+    <button type="submit" class="btn btn-outline" id="bulkPrintBtn" disabled>🖨 Print Selected (2 per page)</button>
+  </div>
+
+  <div class="table-wrap">
+  <table class="receipt-table">
+    <thead>
+      <tr>
+        <th class="checkbox-cell"></th>
+        <th>Receipt No</th>
+        <th>Name</th>
+        <th>Date</th>
+        <th>Amount</th>
+        <th>Paid</th>
+        <th>Due</th>
+        <th>Status</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in receipts %}
+      <tr>
+        <td class="checkbox-cell">
+          <input type="checkbox" class="row-check" value="{{ r.id }}" onclick="updateBulkPrintState()">
+        </td>
+        <td>{{ r.receipt_no }}</td>
+        <td>{{ r.name }}</td>
+        <td>{{ r.date }}</td>
+        <td>₹{{ "%.2f"|format(r.total_amount) }}</td>
+        <td>₹{{ "%.2f"|format(r.paid_amount) }}</td>
+        <td>₹{{ "%.2f"|format(r.due_amount) }}</td>
+        <td><span class="badge badge-{{ r.status|lower }}">{{ r.status }}</span></td>
+        <td class="actions-cell">
+          <a class="link-btn" href="{{ url_for('view_receipt', receipt_id=r.id) }}" target="_blank">View / Print</a>
+          {% if r.status != "Paid" %}
+          <button type="button" class="link-btn" onclick="openPaymentModal({{ r.id }}, '{{ r.receipt_no }}', {{ r.total_amount }}, {{ r.paid_amount }})">Update Payment</button>
+          {% else %}
+          <a class="link-btn" href="{{ url_for('view_receipt', receipt_id=r.id, copy='paid') }}" target="_blank">Paid Copy</a>
+          {% endif %}
+          <a class="link-btn" href="{{ url_for('whatsapp_receipt', receipt_id=r.id) }}">WhatsApp</a>
+          <form method="post" action="{{ url_for('delete_receipt', receipt_id=r.id) }}" class="inline-form"
+                onsubmit="return confirm('Delete receipt {{ r.receipt_no }}? This cannot be undone.');">
+            <button type="submit" class="link-btn link-danger">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="9" class="empty-row">No receipts found.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</form>
+
+<!-- Payment update modal -->
+<div id="paymentModal" class="modal-overlay hidden">
+  <div class="modal-box">
+    <h3>Update Payment - <span id="modalReceiptNo"></span></h3>
+    <form method="post" id="paymentForm">
+      <p>Total Amount: ₹<span id="modalTotal"></span></p>
+      <div class="quick-actions">
+        <button type="submit" name="action" value="mark_paid" class="btn btn-success">Mark Fully Paid</button>
+      </div>
+      <hr>
+      <label for="paidInput">Or set paid amount:</label>
+      <input type="number" id="paidInput" name="paid_amount" step="0.01" min="0">
+      <button type="submit" name="action" value="update_partial" class="btn btn-primary">Save Partial Payment</button>
+    </form>
+    <button class="btn btn-outline modal-close" onclick="closePaymentModal()">Cancel</button>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+{% endblock %}

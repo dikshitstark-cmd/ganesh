@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Bulk Generate Receipts{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <h1>Bulk Receipt Generation</h1>
+</div>
+
+<div class="form-card">
+  <p>Upload an Excel file with columns: <strong>Name | Address | Amount | Mode</strong>.
+     Every row creates a new receipt with status <em>Unpaid</em> and an
+     auto-assigned receipt number.</p>
+  <p><a href="{{ url_for('bulk_sample') }}">Download a sample Excel file</a></p>
+
+  {% if error %}
+    <div class="flash flash-error">{{ error }}</div>
+  {% endif %}
+
+  <form method="post" enctype="multipart/form-data">
+    <div class="form-field">
+      <label>Excel File (.xlsx / .xls)</label>
+      <input type="file" name="excel_file" accept=".xlsx,.xls" required>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Generate Receipts</button>
+    </div>
+  </form>
+
+  {% if results %}
+    <div class="bulk-results">
+      <h3>Done</h3>
+      <p>{{ results.created }} receipt(s) created.</p>
+      {% if not results.pdf_engine_ok %}
+        <p class="flash flash-error">
+          PDF engine (WeasyPrint) was not available, so the ZIP contains
+          printable HTML files instead of PDFs. Open each file in a browser
+          and use Print &rarr; Save as PDF, or install WeasyPrint (see README)
+          for automatic PDF generation next time.
+        </p>
+      {% endif %}
+      <a class="btn btn-success" href="{{ url_for('download_generated', filename=results.zip_name) }}">
+        Download ZIP of Receipts
+      </a>
+
+      {% if results.errors %}
+        <h4>Rows skipped:</h4>
+        <ul class="error-list">
+          {% for e in results.errors %}
+            <li>{{ e }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

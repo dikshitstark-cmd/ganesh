@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Receipt {{ r.receipt_no }}</title>
+{% if not for_pdf %}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Telugu:wght@400;600;700&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+{% endif %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/receipt.css') }}">
+</head>
+<body>
+
+{% if not standalone %}
+<div class="toolbar no-print">
+  <a href="{{ url_for('dashboard') }}">&larr; Back to Dashboard</a>
+  <div class="toolbar-actions">
+    <label class="qr-toggle">
+      <input type="checkbox" id="qrToggle"
+             {{ 'checked' if request.args.get('qr', '1') != '0' else '' }}
+             onchange="location.href = updateQrParam(this.checked)">
+      Show QR code
+    </label>
+    {% if r.status == "Paid" and not r.paid_copy %}
+    <a class="btn btn-outline" href="{{ url_for('view_receipt', receipt_id=r.id, copy='paid') }}" target="_blank">
+      Generate Paid Copy
+    </a>
+    {% endif %}
+    <button onclick="window.print()">🖨 Print / Save as PDF</button>
+  </div>
+</div>
+<script>
+function updateQrParam(checked) {
+  const url = new URL(window.location.href);
+  url.searchParams.set("qr", checked ? "1" : "0");
+  return url.toString();
+}
+</script>
+{% endif %}
+
+{% import "_receipt_body.html" as rb %}
+<div class="a4-page">
+  {{ rb.receipt_body(r) }}
+</div>
+
+</body>
+</html>

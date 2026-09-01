@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Error {{ code }}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+<main class="page">
+  <div class="form-card" style="text-align:center; margin-top: 60px;">
+    <h1 style="color:#c0392b;">Error {{ code }}</h1>
+    <p>{{ message }}</p>
+    <a class="btn btn-primary" href="{{ url_for('dashboard') }}">Back to Dashboard</a>
+  </div>
+</main>
+</body>
+</html>

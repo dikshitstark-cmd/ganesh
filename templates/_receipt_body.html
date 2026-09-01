@@ -1,0 +1,96 @@
+{% macro receipt_body(r) %}
+<div class="receipt-half">
+
+  {% if r.paid_copy %}
+  <div class="copy-tag">Duplicate — Paid Copy</div>
+  {% endif %}
+
+  <div class="receipt-inner">
+
+    <div class="blue-strip">
+      <span class="te">గణేష మహోత్సవం - విరాళాల రసీదు</span>
+      <span class="dot">•</span>
+      <span class="en">GANESH UTSAV - DONATION RECEIPT</span>
+    </div>
+
+    <div class="receipt-header">
+      <img class="emblem emblem-left" src="{{ url_for('static', filename='images/ganesh_left.png') }}" alt="">
+      <div class="header-text">
+        <div class="org-te">{{ r.org_name_te }}</div>
+        <div class="org-en">{{ r.org_name_en }}</div>
+        <div class="header-sub">Ganeshotsav Celebration Committee</div>
+      </div>
+      <img class="emblem emblem-right" src="{{ url_for('static', filename='images/ganesh_right.png') }}" alt="">
+    </div>
+
+    <div class="status-stamp status-{{ r.status|lower }}">{{ r.status|upper }}</div>
+
+    <div class="meta-row">
+      <div><span class="meta-label">Receipt No:</span> <strong>{{ r.receipt_no }}</strong></div>
+      <div><span class="meta-label">Date:</span> <strong>{{ r.date }}</strong></div>
+    </div>
+
+    <table class="details-table">
+      <tr>
+        <td class="dt-label">Received From / స్వీకరించినవారు</td>
+        <td class="dt-value">{{ r.name }}</td>
+      </tr>
+      <tr>
+        <td class="dt-label">Address / చిరునామా</td>
+        <td class="dt-value">{{ r.address }}</td>
+      </tr>
+      <tr>
+        <td class="dt-label">Purpose / ప్రయోజనం</td>
+        <td class="dt-value">{{ r.purpose }}</td>
+      </tr>
+      <tr>
+        <td class="dt-label">Payment Mode / చెల్లింపు విధానం</td>
+        <td class="dt-value">{{ r.mode }}</td>
+      </tr>
+      <tr>
+        <td class="dt-label">Total Amount / మొత్తం</td>
+        <td class="dt-value dt-amount">₹ {{ "%.2f"|format(r.total_amount) }}</td>
+      </tr>
+      <tr>
+        <td class="dt-label">Paid Amount / చెల్లించినది</td>
+        <td class="dt-value">₹ {{ "%.2f"|format(r.paid_amount) }}</td>
+      </tr>
+      <tr>
+        <td class="dt-label">Due Amount / బాకీ</td>
+        <td class="dt-value">₹ {{ "%.2f"|format(r.due_amount) }}</td>
+      </tr>
+      <tr>
+        <td class="dt-label">Amount in Words</td>
+        <td class="dt-value">{{ r.amount_words }}</td>
+      </tr>
+    </table>
+
+    <div class="lower-row">
+      <div class="notes">
+        <div class="notes-title">Notes:</div>
+        <div>1. This receipt is valid only against the amount received as stated above.</div>
+        <div>2. For any queries, please contact the committee office.</div>
+      </div>
+
+      {% if r.qr_data_uri %}
+      <div class="qr-block">
+        <img src="{{ r.qr_data_uri }}" alt="UPI QR">
+        <div class="qr-caption">Scan to pay due amount</div>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="footer-row">
+      <div class="thankyou">
+        <div class="te">ధన్యవాదములు</div>
+        <div class="en">Thank You for Your Contribution</div>
+      </div>
+      <div class="signature-block">
+        <div class="sign-line"></div>
+        <div class="sign-label">Authorized Signature</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endmacro %}
