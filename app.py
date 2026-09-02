@@ -1,6 +1,13 @@
 """
 app.py - Ganesh Utsav Receipt Management System
 Flask application entry point. Run with:  python app.py
+
+Environment variables (all optional, sensible defaults for local dev):
+  SECRET_KEY       Flask session signing key. SET THIS for any live deployment.
+  ADMIN_USERNAME   Username for the auto-created first admin account (default: admin)
+  ADMIN_PASSWORD   Password for that account (default: admin123 -- CHANGE IT)
+  DATABASE_PATH    Path to the SQLite file (default: receipts.db next to this file)
+  PORT             Port to listen on when run directly with `python app.py`
 """
 
 import csv
@@ -8,17 +15,18 @@ import io
 import os
 import zipfile
 from datetime import datetime
+from functools import wraps
 from pathlib import Path
 
 import openpyxl
 from flask import (
     Flask, render_template, request, redirect, url_for,
-    flash, send_file, abort, jsonify, session
+    flash, send_file, abort, session
 )
+from werkzeug.security import check_password_hash
 
 import db
 import utils
-from auth import login_required, admin_required
 
 BASE_DIR = Path(__file__).resolve().parent
 UPLOAD_DIR = BASE_DIR / "uploads"
@@ -26,27 +34,145 @@ GENERATED_DIR = BASE_DIR / "generated"
 UPLOAD_DIR.mkdir(exist_ok=True)
 GENERATED_DIR.mkdir(exist_ok=True)
 
-ALLOWED_MODES = ["Cash", "UPI", "Bank Transfer", "Cheque", "Other"]
+ALLOWED_MODES = ["Cash", "UPI", "Cash/UPI", "Bank Transfer", "Cheque", "Other"]
 ALLOWED_EXCEL_EXT = {".xlsx", ".xls"}
 
 app = Flask(__name__)
-# In production set SECRET_KEY as an environment variable (see .env.example).
-# Falling back to a fixed string only so the app still runs out of the box
-# in local/dev use.
 app.secret_key = os.environ.get("SECRET_KEY", "change-this-secret-key-in-production")
 app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024  # 10 MB upload cap
-# Session cookie hardening -- fine to keep SESSION_COOKIE_SECURE off for
-# local http development; set FORCE_SECURE_COOKIES=1 on your HTTPS deployment.
-app.config["SESSION_COOKIE_HTTPONLY"] = True
-app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-app.config["SESSION_COOKIE_SECURE"] = os.environ.get("FORCE_SECURE_COOKIES") == "1"
+
+
+# ---------------------------------------------------------------------------
+# Auth
+# ---------------------------------------------------------------------------
+
+def login_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not session.get("user_id"):
+            return redirect(url_for("login", next=request.path))
+        return view(*args, **kwargs)
+    return wrapped
+
+
+def admin_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not session.get("user_id"):
+            return redirect(url_for("login", next=request.path))
+        if session.get("role") != "admin":
+            abort(403)
+        return view(*args, **kwargs)
+    return wrapped
+
+
+@app.context_processor
+def inject_current_user():
+    return {
+        "current_username": session.get("username"),
+        "current_role": session.get("role"),
+    }
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if session.get("user_id"):
+        return redirect(url_for("dashboard"))
+
+    if request.method == "GET":
+        return render_template("login.html", error=None)
+
+    username = request.form.get("username", "").strip()
+    password = request.form.get("password", "")
+    user = db.get_user_by_username(username)
+
+    if not user or not check_password_hash(user["password_hash"], password):
+        return render_template("login.html", error="Invalid username or password."), 401
+
+    session.clear()
+    session["user_id"] = user["id"]
+    session["username"] = user["username"]
+    session["role"] = user["role"]
+    next_url = request.form.get("next") or url_for("dashboard")
+    return redirect(next_url)
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
+
+@app.route("/account/password", methods=["GET", "POST"])
+@login_required
+def change_password():
+    if request.method == "GET":
+        return render_template("change_password.html", error=None)
+
+    current = request.form.get("current_password", "")
+    new = request.form.get("new_password", "")
+    confirm = request.form.get("confirm_password", "")
+    user = db.get_user(session["user_id"])
+
+    if not check_password_hash(user["password_hash"], current):
+        return render_template("change_password.html", error="Current password is incorrect."), 400
+    if len(new) < 6:
+        return render_template("change_password.html", error="New password must be at least 6 characters."), 400
+    if new != confirm:
+        return render_template("change_password.html", error="New password and confirmation do not match."), 400
+
+    db.update_user_password(user["id"], new)
+    flash("Password updated successfully.", "success")
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/admin/users", methods=["GET", "POST"])
+@admin_required
+def admin_users():
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+        if not username or len(username) < 3:
+            flash("Username must be at least 3 characters.", "error")
+        elif len(password) < 6:
+            flash("Password must be at least 6 characters.", "error")
+        elif db.get_user_by_username(username):
+            flash("That username is already taken.", "error")
+        else:
+            db.create_user(username, password, role="subadmin")
+            flash(f"Sub-admin '{username}' created.", "success")
+        return redirect(url_for("admin_users"))
+
+    users = db.list_users()
+    return render_template("admin_users.html", users=users)
+
+
+@app.route("/admin/users/<int:user_id>/delete", methods=["POST"])
+@admin_required
+def delete_subadmin(user_id):
+    target = db.get_user(user_id)
+    if not target:
+        abort(404)
+    if target["role"] == "admin":
+        flash("Admin accounts cannot be deleted from here.", "error")
+    elif target["id"] == session.get("user_id"):
+        flash("You cannot delete your own account while logged in.", "error")
+    else:
+        db.delete_user(user_id)
+        flash(f"Sub-admin '{target['username']}' removed.", "success")
+    return redirect(url_for("admin_users"))
+
+
+@app.errorhandler(403)
+def forbidden(e):
+    return render_template("error.html", code=403, message="You don't have permission to view this page."), 403
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def build_receipt_context(row, show_qr=True, paid_copy=False):
+def build_receipt_context(row):
     """Turn a sqlite Row into everything the receipt template needs."""
     r = dict(row)
     upi_id = db.get_setting("upi_id")
@@ -54,7 +180,7 @@ def build_receipt_context(row, show_qr=True, paid_copy=False):
     org_te = db.get_setting("org_name_te")
 
     qr_data_uri = None
-    if show_qr and r["due_amount"] > 0:
+    if r["due_amount"] > 0 and r.get("show_qr", 1):
         qr_data_uri = utils.generate_upi_qr_data_uri(
             upi_id=upi_id,
             payee_name=org_en,
@@ -67,7 +193,6 @@ def build_receipt_context(row, show_qr=True, paid_copy=False):
     r["qr_data_uri"] = qr_data_uri
     r["org_name_en"] = org_en
     r["org_name_te"] = org_te
-    r["paid_copy"] = paid_copy
     return r
 
 
@@ -83,104 +208,16 @@ def render_receipt_html(row, for_pdf=False):
     )
 
 
-@app.context_processor
-def inject_current_user():
-    """Makes `current_user` available in every template without having to
-    pass it explicitly from every view function."""
-    if session.get("user_id"):
-        return {"current_user": {
-            "id": session.get("user_id"),
-            "username": session.get("username"),
-            "role": session.get("role"),
-        }}
-    return {"current_user": None}
-
-
-# ---------------------------------------------------------------------------
-# Authentication
-# ---------------------------------------------------------------------------
-
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    if session.get("user_id"):
-        return redirect(url_for("dashboard"))
-
-    if request.method == "GET":
-        return render_template("login.html", error=None)
-
-    username = request.form.get("username", "").strip()
-    password = request.form.get("password", "")
-    user = db.verify_user(username, password)
-    if not user:
-        return render_template("login.html", error="Invalid username or password."), 401
-
-    session.clear()
-    session["user_id"] = user["id"]
-    session["username"] = user["username"]
-    session["role"] = user["role"]
-    flash(f"Welcome back, {user['username']}!", "success")
-
-    next_url = request.args.get("next")
-    if next_url and next_url.startswith("/"):
-        return redirect(next_url)
-    return redirect(url_for("dashboard"))
-
-
-@app.route("/logout")
-def logout():
-    session.clear()
-    flash("You have been logged out.", "success")
-    return redirect(url_for("login"))
-
-
-# ---------------------------------------------------------------------------
-# User management (admin only)
-# ---------------------------------------------------------------------------
-
-@app.route("/users")
-@admin_required
-def users_list():
-    return render_template("users.html", users=db.list_users(), error=None)
-
-
-@app.route("/users/create", methods=["POST"])
-@admin_required
-def users_create():
-    username = request.form.get("username", "").strip()
-    password = request.form.get("password", "")
-    role = request.form.get("role", "subadmin")
-
-    try:
-        if not username or not password:
-            raise ValueError("Username and password are required.")
-        if len(password) < 6:
-            raise ValueError("Password must be at least 6 characters.")
-        if role not in ("admin", "subadmin"):
-            raise ValueError("Invalid role selected.")
-        db.create_user(username, password, role)
-        flash(f"User '{username}' created as {role}.", "success")
-    except ValueError as e:
-        flash(str(e), "error")
-
-    return redirect(url_for("users_list"))
-
-
-@app.route("/users/<int:user_id>/delete", methods=["POST"])
-@admin_required
-def users_delete(user_id):
-    target = db.get_user(user_id)
-    if not target:
-        abort(404)
-    if target["id"] == session.get("user_id"):
-        flash("You cannot delete your own account while logged in.", "error")
-        return redirect(url_for("users_list"))
-    if target["role"] == "admin" and db.count_admins() <= 1:
-        flash("Cannot delete the last remaining admin account.", "error")
-        return redirect(url_for("users_list"))
-
-    db.delete_user(user_id)
-    flash(f"User '{target['username']}' removed.", "success")
-    return redirect(url_for("users_list"))
+def parse_id_list(raw):
+    """Parse a comma-separated or repeated-field list of ints, silently
+    dropping anything non-numeric."""
+    out = []
+    for part in raw:
+        for piece in str(part).split(","):
+            piece = piece.strip()
+            if piece.isdigit():
+                out.append(int(piece))
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -188,6 +225,7 @@ def users_delete(user_id):
 # ---------------------------------------------------------------------------
 
 @app.route("/")
+@login_required
 def home():
     return redirect(url_for("dashboard"))
 
@@ -230,6 +268,7 @@ def new_receipt():
         total_amount = request.form.get("total_amount", "").strip()
         paid_amount = request.form.get("paid_amount", "0").strip() or "0"
         payment_status_choice = request.form.get("payment_status", "unpaid")
+        show_qr = request.form.get("show_qr") == "on"
 
         if not name or not address:
             raise ValueError("Name and Address are required.")
@@ -257,7 +296,7 @@ def new_receipt():
         new_id = db.create_receipt(
             name=name, address=address, total_amount=total_amount,
             mode=mode, purpose=purpose, phone=phone or None,
-            paid_amount=paid_amount,
+            paid_amount=paid_amount, show_qr=show_qr,
         )
         flash("Receipt created successfully.", "success")
         return redirect(url_for("view_receipt", receipt_id=new_id))
@@ -277,10 +316,8 @@ def view_receipt(receipt_id):
     row = db.get_receipt(receipt_id)
     if not row:
         abort(404)
-    show_qr = request.args.get("qr", "1") != "0"
-    paid_copy = request.args.get("copy") == "paid"
-    context = build_receipt_context(row, show_qr=show_qr, paid_copy=paid_copy)
-    return render_template("receipt.html", r=context, standalone=False, for_pdf=False)
+    context = build_receipt_context(row)
+    return render_template("receipt.html", r=context, standalone=False)
 
 
 @app.route("/receipt/<int:receipt_id>/payment", methods=["POST"])
@@ -294,7 +331,8 @@ def update_payment(receipt_id):
     try:
         if action == "mark_paid":
             db.mark_paid(receipt_id)
-            flash(f"Receipt {row['receipt_no']} marked as Paid.", "success")
+            flash(f"Receipt {row['receipt_no']} marked as Paid. "
+                  f"Reprint it any time to hand over a Paid copy.", "success")
         elif action == "update_partial":
             amount = float(request.form.get("paid_amount", "0"))
             if amount < 0 or amount > row["total_amount"]:
@@ -309,6 +347,18 @@ def update_payment(receipt_id):
     return redirect(request.referrer or url_for("dashboard"))
 
 
+@app.route("/receipt/<int:receipt_id>/toggle-qr", methods=["POST"])
+@login_required
+def toggle_qr(receipt_id):
+    row = db.get_receipt(receipt_id)
+    if not row:
+        abort(404)
+    new_state = not bool(row["show_qr"])
+    db.set_show_qr(receipt_id, new_state)
+    flash(f"QR code {'enabled' if new_state else 'removed'} for receipt {row['receipt_no']}.", "success")
+    return redirect(request.referrer or url_for("dashboard"))
+
+
 @app.route("/receipt/<int:receipt_id>/delete", methods=["POST"])
 @login_required
 def delete_receipt(receipt_id):
@@ -316,8 +366,32 @@ def delete_receipt(receipt_id):
     if not row:
         abort(404)
     db.delete_receipt(receipt_id)
-    flash(f"Receipt {row['receipt_no']} was deleted.", "success")
+    flash(f"Receipt {row['receipt_no']} deleted.", "success")
     return redirect(request.referrer or url_for("dashboard"))
+
+
+@app.route("/receipts/delete-selected", methods=["POST"])
+@login_required
+def delete_selected():
+    ids = parse_id_list(request.form.getlist("ids"))
+    if not ids:
+        flash("No receipts were selected.", "error")
+        return redirect(request.referrer or url_for("dashboard"))
+    db.delete_receipts(ids)
+    flash(f"Deleted {len(ids)} receipt(s).", "success")
+    return redirect(request.referrer or url_for("dashboard"))
+
+
+@app.route("/receipts/print-selected")
+@login_required
+def print_selected():
+    ids = parse_id_list(request.args.getlist("ids"))
+    if not ids:
+        flash("Select at least one receipt to print.", "error")
+        return redirect(url_for("dashboard"))
+    rows = db.get_receipts_by_ids(ids)
+    receipts = [build_receipt_context(r) for r in rows]
+    return render_template("print_selected.html", receipts=receipts)
 
 
 @app.route("/receipt/<int:receipt_id>/whatsapp")
@@ -341,39 +415,6 @@ def whatsapp_receipt(receipt_id):
               "record first (it is never printed on the receipt).", "error")
         return redirect(request.referrer or url_for("dashboard"))
     return redirect(link)
-
-
-# ---------------------------------------------------------------------------
-# Bulk print (multiple receipts, 2-per-A4-page layout)
-# ---------------------------------------------------------------------------
-
-@app.route("/print/bulk")
-@login_required
-def print_bulk():
-    ids_param = request.args.get("ids", "")
-    ids = []
-    for piece in ids_param.split(","):
-        piece = piece.strip()
-        if piece.isdigit():
-            ids.append(int(piece))
-
-    if not ids:
-        flash("No receipts were selected to print.", "error")
-        return redirect(url_for("dashboard"))
-
-    contexts = []
-    for rid in ids:
-        row = db.get_receipt(rid)
-        if row:
-            contexts.append(build_receipt_context(row))
-
-    if not contexts:
-        flash("None of the selected receipts could be found.", "error")
-        return redirect(url_for("dashboard"))
-
-    # Group into pairs -> 2 receipts per A4 page
-    pages = [contexts[i:i + 2] for i in range(0, len(contexts), 2)]
-    return render_template("print_bulk.html", pages=pages, count=len(contexts))
 
 
 # ---------------------------------------------------------------------------
@@ -546,6 +587,7 @@ def bulk_upload():
         "errors": errors,
         "zip_name": zip_name,
         "pdf_engine_ok": pdf_engine_ok,
+        "ids": created_rows,
     }
     return render_template("bulk_upload.html", error=None, results=results)
 
@@ -600,8 +642,15 @@ def server_error(e):
     return render_template("error.html", code=500, message="An unexpected error occurred."), 500
 
 
+# ---------------------------------------------------------------------------
+# Entry point (local dev). In production a WSGI server (gunicorn) imports
+# `app` directly and calls db.init_db() is triggered below at import time
+# either way, so both `python app.py` and `gunicorn app:app` work.
+# ---------------------------------------------------------------------------
+
+db.init_db()
+
 if __name__ == "__main__":
-    db.init_db()
     # use_reloader=False: the watchdog-based reloader watches the whole
     # working directory by default, which includes uploads/ and generated/.
     # Writing a bulk ZIP or an uploaded Excel file would otherwise trigger
@@ -610,7 +659,3 @@ if __name__ == "__main__":
     debug_mode = os.environ.get("FLASK_DEBUG") == "1"
     port = int(os.environ.get("PORT", 5000))
     app.run(debug=debug_mode, use_reloader=False, host="0.0.0.0", port=port)
-else:
-    # When imported by a WSGI server (gunicorn, etc.) __main__ never runs,
-    # so make sure the database/tables still get created on first import.
-    db.init_db()
