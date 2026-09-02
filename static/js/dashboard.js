@@ -1,3 +1,4 @@
+// --- Payment modal ---
 function openPaymentModal(receiptId, receiptNo, total, paid) {
   const modal = document.getElementById("paymentModal");
   const form = document.getElementById("paymentForm");
@@ -17,25 +18,59 @@ document.addEventListener("keydown", function (e) {
   if (e.key === "Escape") closePaymentModal();
 });
 
-// ---- Bulk selection / bulk print ----
-function toggleSelectAll(checkbox) {
-  document.querySelectorAll(".row-check").forEach(cb => { cb.checked = checkbox.checked; });
-  updateBulkPrintState();
-}
+// --- Row selection / bulk actions ---
+document.addEventListener("DOMContentLoaded", function () {
+  const rowChecks = document.querySelectorAll(".row-check");
+  const selectAll = document.getElementById("selectAll");
+  const countLabel = document.getElementById("selectedCount");
+  const printBtn = document.getElementById("printSelectedBtn");
+  const deleteBtn = document.getElementById("deleteSelectedBtn");
 
-function updateBulkPrintState() {
-  const all = document.querySelectorAll(".row-check");
-  const checked = document.querySelectorAll(".row-check:checked").length;
-  const btn = document.getElementById("bulkPrintBtn");
-  if (btn) btn.disabled = checked === 0;
-  const allBox = document.getElementById("selectAll");
-  if (allBox) allBox.checked = all.length > 0 && checked === all.length;
-}
+  function selectedIds() {
+    return Array.from(rowChecks).filter(c => c.checked).map(c => c.value);
+  }
 
-function submitBulkPrint(e) {
-  e.preventDefault();
-  const ids = Array.from(document.querySelectorAll(".row-check:checked")).map(cb => cb.value);
-  if (ids.length === 0) return false;
-  window.open("/print/bulk?ids=" + ids.join(","), "_blank");
-  return false;
-}
+  function refresh() {
+    const ids = selectedIds();
+    countLabel.textContent = ids.length + " selected";
+    printBtn.disabled = ids.length === 0;
+    deleteBtn.disabled = ids.length === 0;
+  }
+
+  rowChecks.forEach(cb => cb.addEventListener("change", refresh));
+
+  if (selectAll) {
+    selectAll.addEventListener("change", function () {
+      rowChecks.forEach(cb => { cb.checked = selectAll.checked; });
+      refresh();
+    });
+  }
+
+  if (printBtn) {
+    printBtn.addEventListener("click", function () {
+      const ids = selectedIds();
+      if (ids.length === 0) return;
+      window.open("/receipts/print-selected?ids=" + ids.join(","), "_blank");
+    });
+  }
+
+  if (deleteBtn) {
+    deleteBtn.addEventListener("click", function () {
+      const ids = selectedIds();
+      if (ids.length === 0) return;
+      if (!confirm("Delete " + ids.length + " selected receipt(s)? This cannot be undone.")) return;
+      const form = document.getElementById("deleteSelectedForm");
+      form.innerHTML = "";
+      ids.forEach(id => {
+        const input = document.createElement("input");
+        input.type = "hidden";
+        input.name = "ids";
+        input.value = id;
+        form.appendChild(input);
+      });
+      form.submit();
+    });
+  }
+
+  refresh();
+});
