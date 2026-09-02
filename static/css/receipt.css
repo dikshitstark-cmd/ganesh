@@ -35,29 +35,48 @@ body {
   font-size: 14px;
 }
 
-/* ---- A4 page: two stacked half-page copies (customer + office) ---- */
+/* ---- A4 page ----
+   Two layout modes:
+   .a4-page.single   -> one receipt filling the page (normal single print)
+   .a4-page.two-up   -> two DIFFERENT receipts stacked on one sheet, used
+                        only by the "print selected" bulk view to save paper
+*/
 .a4-page {
   width: 210mm;
   min-height: 297mm;
   margin: 16px auto;
   background: white;
   box-shadow: 0 0 12px rgba(0,0,0,0.15);
-  padding: 6mm;
+  padding: 4mm;
   display: flex;
   flex-direction: column;
 }
+.a4-page.two-up { break-after: page; }
+.a4-page.two-up:last-child { break-after: auto; }
 
 .receipt-half {
   flex: 1;
   position: relative;
   border: 1.5px solid #1a3e72;
   border-radius: 6px;
-  padding: 5mm 7mm;
+  padding: 3mm 6mm;
   overflow: hidden;
   display: flex;
   flex-direction: column;
 }
+.a4-page.single .receipt-half { padding: 10mm 14mm; }
+.receipt-half-blank { border: none; visibility: hidden; }
 
+.watermark {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 55%;
+  transform: translate(-50%, -50%);
+  opacity: 0.10;
+  z-index: 0;
+  pointer-events: none;
+}
 
 .copy-tag {
   position: absolute;
@@ -81,15 +100,31 @@ body {
 .blue-strip {
   background: linear-gradient(90deg, #14315c, #1a3e72 50%, #14315c);
   color: white;
-  text-align: center;
-  padding: 4px 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 3px 6px;
   border-radius: 4px;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.02em;
-  margin-bottom: 6px;
+  margin-bottom: 3px;
+  flex-wrap: wrap;
 }
-.blue-strip .dot { margin: 0 8px; opacity: 0.6; }
+.blue-strip .dot { opacity: 0.6; }
+
+.status-pill {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: white;
+}
+.status-pill.status-paid { color: #1e8e3e; }
+.status-pill.status-partial { color: #e8710a; }
+.status-pill.status-unpaid { color: #d93025; }
 
 .receipt-header {
   display: flex;
@@ -104,30 +139,12 @@ body {
 .org-en { font-size: 14px; font-weight: 700; color: #1a3e72; letter-spacing: 0.02em; }
 .header-sub { font-size: 10px; color: #777; margin-top: 1px; }
 
-.status-stamp {
-  position: absolute;
-  top: 4mm;
-  right: 6mm;
-  z-index: 3;
-  font-size: 13px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  padding: 4px 12px;
-  border-radius: 4px;
-  border: 2.5px solid currentColor;
-  transform: rotate(8deg);
-  background: white;
-}
-.status-paid { color: #1e8e3e; }
-.status-partial { color: #e8710a; }
-.status-unpaid { color: #d93025; }
-
 .meta-row {
   display: flex;
   justify-content: space-between;
   font-size: 11.5px;
-  margin: 6px 0 4px;
-  padding-bottom: 4px;
+  margin: 3px 0 3px;
+  padding-bottom: 3px;
   border-bottom: 1px dashed #ccc;
 }
 .meta-label { color: #777; }
@@ -136,10 +153,10 @@ body {
   width: 100%;
   border-collapse: collapse;
   font-size: 11.5px;
-  margin-top: 4px;
+  margin-top: 2px;
 }
 .details-table td {
-  padding: 3.5px 4px;
+  padding: 2.5px 4px;
   vertical-align: top;
   border-bottom: 1px solid #f0ede4;
 }
@@ -156,21 +173,21 @@ body {
   justify-content: space-between;
   align-items: flex-start;
   gap: 10px;
-  margin-top: 6px;
+  margin-top: 3px;
 }
 .notes { font-size: 9.5px; color: #666; max-width: 68%; }
 .notes-title { font-weight: 700; color: #444; margin-bottom: 2px; }
 
 .qr-block { text-align: center; }
-.qr-block img { width: 70px; height: 70px; }
+.qr-block img { width: 58px; height: 58px; }
 .qr-caption { font-size: 8px; color: #888; margin-top: 2px; }
 
 .footer-row {
-  margin-top: 10px;
+  margin-top: auto;
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
-  padding-top: 6px;
+  padding-top: 4px;
   border-top: 1px dashed #ccc;
 }
 .thankyou .te { font-size: 13px; font-weight: 700; color: #d9720a; }
