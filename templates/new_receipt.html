@@ -53,6 +53,12 @@
         <label>Paid Amount (₹)</label>
         <input type="number" step="0.01" min="0" name="paid_amount" value="{{ request.form.get('paid_amount', '0') }}">
       </div>
+      <div class="form-field form-field-wide checkbox-field">
+        <label>
+          <input type="checkbox" name="show_qr" {% if request.form.get('show_qr', 'on') == 'on' %}checked{% endif %}>
+          Show UPI QR code on this receipt
+        </label>
+      </div>
     </div>
 
     <div class="form-actions">
