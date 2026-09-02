@@ -1,68 +1,60 @@
 """
-db.py - SQLite data layer for the Ganesh Utsav Receipt Management System.
-
-All database access goes through this module so the rest of the app never
-touches raw SQL directly (keeps things modular / testable).
+db.py - Supabase (Postgres) data layer for the Ganesh Utsav Receipt
+Management System. Reads the connection string from the DATABASE_URL
+environment variable (set this on Render / locally before running).
 """
 
 import os
-import sqlite3
 from datetime import datetime
-from pathlib import Path
 
+import psycopg2
+from psycopg2.extras import RealDictCursor
 from werkzeug.security import generate_password_hash
 
-BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = Path(os.environ.get("DATABASE_PATH", str(BASE_DIR / "receipts.db")))
-
-RECEIPT_PREFIX = "GU"  # Ganesh Utsav
+DATABASE_URL = os.environ.get("DATABASE_URL")
+RECEIPT_PREFIX = "GU"
 
 
 def get_conn():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
+    if not DATABASE_URL:
+        raise RuntimeError("DATABASE_URL environment variable is not set.")
+    return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
 
 
 def _column_names(cur, table):
-    cur.execute(f"PRAGMA table_info({table})")
-    return {row[1] for row in cur.fetchall()}
+    cur.execute(
+        "SELECT column_name FROM information_schema.columns WHERE table_name = %s",
+        (table,),
+    )
+    return {row["column_name"] for row in cur.fetchall()}
 
 
 def init_db():
-    """Create tables if they don't already exist, and migrate older
-    databases in place by adding any newly-introduced columns. Safe to
-    call every startup."""
     conn = get_conn()
     cur = conn.cursor()
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS receipts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             receipt_no TEXT UNIQUE NOT NULL,
             date TEXT NOT NULL,
             name TEXT NOT NULL,
             address TEXT NOT NULL,
             phone TEXT,
             purpose TEXT NOT NULL DEFAULT 'Ganesh Chanda',
-            total_amount REAL NOT NULL,
-            paid_amount REAL NOT NULL DEFAULT 0,
-            due_amount REAL NOT NULL,
+            total_amount DOUBLE PRECISION NOT NULL,
+            paid_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+            due_amount DOUBLE PRECISION NOT NULL,
             mode TEXT NOT NULL DEFAULT 'Cash',
             status TEXT NOT NULL DEFAULT 'Unpaid',
-            show_qr INTEGER NOT NULL DEFAULT 1,
+            show_qr BOOLEAN NOT NULL DEFAULT TRUE,
             created_at TEXT NOT NULL
         )
     """)
-    # Migration guard: databases created by an earlier version of this app
-    # won't have show_qr yet -- add it rather than requiring a fresh DB.
     existing_cols = _column_names(cur, "receipts")
     if "show_qr" not in existing_cols:
-        cur.execute("ALTER TABLE receipts ADD COLUMN show_qr INTEGER NOT NULL DEFAULT 1")
+        cur.execute("ALTER TABLE receipts ADD COLUMN show_qr BOOLEAN NOT NULL DEFAULT TRUE")
 
-    # Persistent counter so receipt numbers never repeat/reset even if rows
-    # are deleted, and survive across app restarts/years.
     cur.execute("""
         CREATE TABLE IF NOT EXISTS counters (
             name TEXT PRIMARY KEY,
@@ -70,10 +62,9 @@ def init_db():
         )
     """)
     cur.execute(
-        "INSERT OR IGNORE INTO counters (name, value) VALUES ('receipt_no', 0)"
+        "INSERT INTO counters (name, value) VALUES ('receipt_no', 0) ON CONFLICT (name) DO NOTHING"
     )
 
-    # Simple app settings (UPI id for the QR code, org names, etc.)
     cur.execute("""
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
@@ -86,12 +77,14 @@ def init_db():
         "org_name_te": "శ్రీ శ్రీ వినాయక ఉత్సవ కమిటీ",
     }
     for k, v in defaults.items():
-        cur.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (k, v))
+        cur.execute(
+            "INSERT INTO settings (key, value) VALUES (%s, %s) ON CONFLICT (key) DO NOTHING",
+            (k, v),
+        )
 
-    # --- Auth: admin + sub-admin users ---
     cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             username TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
             role TEXT NOT NULL DEFAULT 'subadmin',
@@ -100,37 +93,37 @@ def init_db():
     """)
     conn.commit()
 
-    # Seed the first admin account if no users exist yet. Credentials can
-    # be overridden via environment variables (recommended for any live
-    # deployment) -- see README "Deployment" section.
     cur.execute("SELECT COUNT(*) AS c FROM users")
     if cur.fetchone()["c"] == 0:
         admin_user = os.environ.get("ADMIN_USERNAME", "admin")
-        admin_pass = os.environ.get("ADMIN_PASSWORD", "admin123")
+        admin_pass = os.environ.get("ADMIN_PASSWORD", "akhil1@A")
         cur.execute("""
             INSERT INTO users (username, password_hash, role, created_at)
-            VALUES (?, ?, 'admin', ?)
+            VALUES (%s, %s, 'admin', %s)
         """, (admin_user, generate_password_hash(admin_pass), datetime.now().isoformat()))
         conn.commit()
 
+    cur.close()
     conn.close()
 
 
 def get_setting(key, default=None):
     conn = get_conn()
-    row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+    cur = conn.cursor()
+    cur.execute("SELECT value FROM settings WHERE key = %s", (key,))
+    row = cur.fetchone()
+    cur.close()
     conn.close()
     return row["value"] if row else default
 
 
 def next_receipt_no():
-    """Atomically bump the persistent counter and return a formatted receipt no."""
     conn = get_conn()
     cur = conn.cursor()
-    cur.execute("UPDATE counters SET value = value + 1 WHERE name = 'receipt_no'")
-    cur.execute("SELECT value FROM counters WHERE name = 'receipt_no'")
+    cur.execute("UPDATE counters SET value = value + 1 WHERE name = 'receipt_no' RETURNING value")
     val = cur.fetchone()["value"]
     conn.commit()
+    cur.close()
     conn.close()
     year = datetime.now().year
     return f"{RECEIPT_PREFIX}/{year}/{val:04d}"
@@ -157,19 +150,24 @@ def create_receipt(name, address, total_amount, mode, purpose="Ganesh Chanda",
         INSERT INTO receipts
             (receipt_no, date, name, address, phone, purpose,
              total_amount, paid_amount, due_amount, mode, status, show_qr, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        RETURNING id
     """, (receipt_no, date, name, address, phone, purpose,
           float(total_amount), float(paid_amount), due_amount, mode, status,
-          1 if show_qr else 0, datetime.now().isoformat()))
-    new_id = cur.lastrowid
+          bool(show_qr), datetime.now().isoformat()))
+    new_id = cur.fetchone()["id"]
     conn.commit()
+    cur.close()
     conn.close()
     return new_id
 
 
 def get_receipt(receipt_id):
     conn = get_conn()
-    row = conn.execute("SELECT * FROM receipts WHERE id = ?", (receipt_id,)).fetchone()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM receipts WHERE id = %s", (receipt_id,))
+    row = cur.fetchone()
+    cur.close()
     conn.close()
     return row
 
@@ -178,11 +176,10 @@ def get_receipts_by_ids(ids):
     if not ids:
         return []
     conn = get_conn()
-    placeholders = ",".join("?" for _ in ids)
-    rows = conn.execute(
-        f"SELECT * FROM receipts WHERE id IN ({placeholders}) ORDER BY id",
-        ids,
-    ).fetchall()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM receipts WHERE id = ANY(%s) ORDER BY id", (list(ids),))
+    rows = cur.fetchall()
+    cur.close()
     conn.close()
     return rows
 
@@ -191,16 +188,19 @@ def list_receipts(search=None, status=None):
     query = "SELECT * FROM receipts WHERE 1=1"
     params = []
     if search:
-        query += " AND (name LIKE ? OR receipt_no LIKE ?)"
+        query += " AND (name ILIKE %s OR receipt_no ILIKE %s)"
         like = f"%{search}%"
         params.extend([like, like])
     if status and status != "All":
-        query += " AND status = ?"
+        query += " AND status = %s"
         params.append(status)
     query += " ORDER BY id DESC"
 
     conn = get_conn()
-    rows = conn.execute(query, params).fetchall()
+    cur = conn.cursor()
+    cur.execute(query, params)
+    rows = cur.fetchall()
+    cur.close()
     conn.close()
     return rows
 
@@ -215,12 +215,14 @@ def update_payment(receipt_id, paid_amount):
     status = compute_status(total, paid_amount)
 
     conn = get_conn()
-    conn.execute("""
+    cur = conn.cursor()
+    cur.execute("""
         UPDATE receipts
-        SET paid_amount = ?, due_amount = ?, status = ?
-        WHERE id = ?
+        SET paid_amount = %s, due_amount = %s, status = %s
+        WHERE id = %s
     """, (paid_amount, due, status, receipt_id))
     conn.commit()
+    cur.close()
     conn.close()
     return get_receipt(receipt_id)
 
@@ -234,16 +236,19 @@ def mark_paid(receipt_id):
 
 def set_show_qr(receipt_id, show_qr):
     conn = get_conn()
-    conn.execute("UPDATE receipts SET show_qr = ? WHERE id = ?",
-                 (1 if show_qr else 0, receipt_id))
+    cur = conn.cursor()
+    cur.execute("UPDATE receipts SET show_qr = %s WHERE id = %s", (bool(show_qr), receipt_id))
     conn.commit()
+    cur.close()
     conn.close()
 
 
 def delete_receipt(receipt_id):
     conn = get_conn()
-    conn.execute("DELETE FROM receipts WHERE id = ?", (receipt_id,))
+    cur = conn.cursor()
+    cur.execute("DELETE FROM receipts WHERE id = %s", (receipt_id,))
     conn.commit()
+    cur.close()
     conn.close()
 
 
@@ -251,9 +256,10 @@ def delete_receipts(ids):
     if not ids:
         return
     conn = get_conn()
-    placeholders = ",".join("?" for _ in ids)
-    conn.execute(f"DELETE FROM receipts WHERE id IN ({placeholders})", ids)
+    cur = conn.cursor()
+    cur.execute("DELETE FROM receipts WHERE id = ANY(%s)", (list(ids),))
     conn.commit()
+    cur.close()
     conn.close()
 
 
@@ -261,27 +267,34 @@ def all_receipts_as_dicts():
     return [dict(r) for r in list_receipts()]
 
 
-# ---------------------------------------------------------------------------
-# Users (auth)
-# ---------------------------------------------------------------------------
+# --- Users (auth) ---
 
 def get_user_by_username(username):
     conn = get_conn()
-    row = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM users WHERE username = %s", (username,))
+    row = cur.fetchone()
+    cur.close()
     conn.close()
     return row
 
 
 def get_user(user_id):
     conn = get_conn()
-    row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM users WHERE id = %s", (user_id,))
+    row = cur.fetchone()
+    cur.close()
     conn.close()
     return row
 
 
 def list_users():
     conn = get_conn()
-    rows = conn.execute("SELECT * FROM users ORDER BY role DESC, username").fetchall()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM users ORDER BY role DESC, username")
+    rows = cur.fetchall()
+    cur.close()
     conn.close()
     return rows
 
@@ -291,24 +304,30 @@ def create_user(username, password, role="subadmin"):
     cur = conn.cursor()
     cur.execute("""
         INSERT INTO users (username, password_hash, role, created_at)
-        VALUES (?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s)
+        RETURNING id
     """, (username, generate_password_hash(password), role, datetime.now().isoformat()))
-    new_id = cur.lastrowid
+    new_id = cur.fetchone()["id"]
     conn.commit()
+    cur.close()
     conn.close()
     return new_id
 
 
 def delete_user(user_id):
     conn = get_conn()
-    conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    cur = conn.cursor()
+    cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
     conn.commit()
+    cur.close()
     conn.close()
 
 
 def update_user_password(user_id, new_password):
     conn = get_conn()
-    conn.execute("UPDATE users SET password_hash = ? WHERE id = ?",
-                 (generate_password_hash(new_password), user_id))
+    cur = conn.cursor()
+    cur.execute("UPDATE users SET password_hash = %s WHERE id = %s",
+                (generate_password_hash(new_password), user_id))
     conn.commit()
+    cur.close()
     conn.close()
