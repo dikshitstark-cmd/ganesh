@@ -2,54 +2,15 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Login - Ganesh Utsav Receipts</title>
-
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Telugu:wght@400;600;700&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
-
+<title>Error {{ code }}</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
-
 <body>
-<main class="page" style="max-width:420px;">
-  
-  <div class="page-head" style="justify-content:center;">
-    <h1>🕉 Ganesh Utsav Receipts</h1>
-  </div>
-
-  <div class="form-card">
-
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        <div class="flash-stack">
-          {% for category, msg in messages %}
-            <div class="flash flash-{{ category }}">{{ msg }}</div>
-          {% endfor %}
-        </div>
-      {% endif %}
-    {% endwith %}
-
-    {% if error %}
-      <div class="flash flash-error">{{ error }}</div>
-    {% endif %}
-
-    <form method="post">
-      <div class="form-field">
-        <label>Username</label>
-        <input type="text" name="username" required autofocus>
-      </div>
-
-      <div class="form-field">
-        <label>Password</label>
-        <input type="password" name="password" required>
-      </div>
-
-      <div class="form-actions">
-        <button type="submit" class="btn btn-primary" style="width:100%;">Log In</button>
-      </div>
-    </form>
-
+<main class="page">
+  <div class="form-card" style="text-align:center; margin-top: 60px;">
+    <h1 style="color:#c0392b;">Error {{ code }}</h1>
+    <p>{{ message }}</p>
+    <a class="btn btn-primary" href="{{ url_for('dashboard') }}">Back to Dashboard</a>
   </div>
 </main>
 </body>
