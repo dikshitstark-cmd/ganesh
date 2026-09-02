@@ -1,8 +1,9 @@
-{% macro receipt_body(r) %}
+{% macro receipt_body(r, copy_label="") %}
 <div class="receipt-half">
+  <img class="watermark" src="{{ url_for('static', filename='images/watermark.png') }}" alt="">
 
-  {% if r.paid_copy %}
-  <div class="copy-tag">Duplicate — Paid Copy</div>
+  {% if copy_label %}
+  <div class="copy-tag">{{ copy_label }}</div>
   {% endif %}
 
   <div class="receipt-inner">
@@ -18,12 +19,10 @@
       <div class="header-text">
         <div class="org-te">{{ r.org_name_te }}</div>
         <div class="org-en">{{ r.org_name_en }}</div>
-        <div class="header-sub">Ganeshotsav Celebration Committee</div>
+        <div class="header-sub">HARI NAGAR,ALLAPUR,KUKATPALLY,HYDERABAD</div>
       </div>
       <img class="emblem emblem-right" src="{{ url_for('static', filename='images/ganesh_right.png') }}" alt="">
     </div>
-
-    <div class="status-stamp status-{{ r.status|lower }}">{{ r.status|upper }}</div>
 
     <div class="meta-row">
       <div><span class="meta-label">Receipt No:</span> <strong>{{ r.receipt_no }}</strong></div>
@@ -43,22 +42,12 @@
         <td class="dt-label">Purpose / ప్రయోజనం</td>
         <td class="dt-value">{{ r.purpose }}</td>
       </tr>
-      <tr>
-        <td class="dt-label">Payment Mode / చెల్లింపు విధానం</td>
-        <td class="dt-value">{{ r.mode }}</td>
-      </tr>
+      
       <tr>
         <td class="dt-label">Total Amount / మొత్తం</td>
         <td class="dt-value dt-amount">₹ {{ "%.2f"|format(r.total_amount) }}</td>
       </tr>
-      <tr>
-        <td class="dt-label">Paid Amount / చెల్లించినది</td>
-        <td class="dt-value">₹ {{ "%.2f"|format(r.paid_amount) }}</td>
-      </tr>
-      <tr>
-        <td class="dt-label">Due Amount / బాకీ</td>
-        <td class="dt-value">₹ {{ "%.2f"|format(r.due_amount) }}</td>
-      </tr>
+      
       <tr>
         <td class="dt-label">Amount in Words</td>
         <td class="dt-value">{{ r.amount_words }}</td>
