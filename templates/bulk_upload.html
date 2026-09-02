@@ -41,6 +41,9 @@
       <a class="btn btn-success" href="{{ url_for('download_generated', filename=results.zip_name) }}">
         Download ZIP of Receipts
       </a>
+      <a class="btn btn-outline" href="{{ url_for('print_selected', ids=results.ids|join(',')) }}" target="_blank">
+        🖨 Print All (2/page, saves paper)
+      </a>
 
       {% if results.errors %}
         <h4>Rows skipped:</h4>
