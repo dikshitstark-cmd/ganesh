@@ -43,60 +43,63 @@
   {% endif %}
 </form>
 
-<form id="bulkPrintForm" onsubmit="return submitBulkPrint(event)">
-  <div class="bulk-toolbar">
-    <label><input type="checkbox" id="selectAll" onclick="toggleSelectAll(this)"> Select All</label>
-    <button type="submit" class="btn btn-outline" id="bulkPrintBtn" disabled>🖨 Print Selected (2 per page)</button>
-  </div>
+<form id="selectionForm">
+<div class="bulk-bar">
+  <label class="bulk-select-all"><input type="checkbox" id="selectAll"> Select all</label>
+  <span id="selectedCount" class="bulk-count">0 selected</span>
+  <button type="button" class="btn btn-outline" id="printSelectedBtn" disabled>🖨 Print Selected (2/page, saves paper)</button>
+  <button type="button" class="btn btn-outline btn-danger" id="deleteSelectedBtn" disabled>Delete Selected</button>
+</div>
 
-  <div class="table-wrap">
-  <table class="receipt-table">
-    <thead>
-      <tr>
-        <th class="checkbox-cell"></th>
-        <th>Receipt No</th>
-        <th>Name</th>
-        <th>Date</th>
-        <th>Amount</th>
-        <th>Paid</th>
-        <th>Due</th>
-        <th>Status</th>
-        <th>Actions</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for r in receipts %}
-      <tr>
-        <td class="checkbox-cell">
-          <input type="checkbox" class="row-check" value="{{ r.id }}" onclick="updateBulkPrintState()">
-        </td>
-        <td>{{ r.receipt_no }}</td>
-        <td>{{ r.name }}</td>
-        <td>{{ r.date }}</td>
-        <td>₹{{ "%.2f"|format(r.total_amount) }}</td>
-        <td>₹{{ "%.2f"|format(r.paid_amount) }}</td>
-        <td>₹{{ "%.2f"|format(r.due_amount) }}</td>
-        <td><span class="badge badge-{{ r.status|lower }}">{{ r.status }}</span></td>
-        <td class="actions-cell">
-          <a class="link-btn" href="{{ url_for('view_receipt', receipt_id=r.id) }}" target="_blank">View / Print</a>
-          {% if r.status != "Paid" %}
-          <button type="button" class="link-btn" onclick="openPaymentModal({{ r.id }}, '{{ r.receipt_no }}', {{ r.total_amount }}, {{ r.paid_amount }})">Update Payment</button>
-          {% else %}
-          <a class="link-btn" href="{{ url_for('view_receipt', receipt_id=r.id, copy='paid') }}" target="_blank">Paid Copy</a>
-          {% endif %}
-          <a class="link-btn" href="{{ url_for('whatsapp_receipt', receipt_id=r.id) }}">WhatsApp</a>
-          <form method="post" action="{{ url_for('delete_receipt', receipt_id=r.id) }}" class="inline-form"
-                onsubmit="return confirm('Delete receipt {{ r.receipt_no }}? This cannot be undone.');">
-            <button type="submit" class="link-btn link-danger">Delete</button>
-          </form>
-        </td>
-      </tr>
-      {% else %}
-      <tr><td colspan="9" class="empty-row">No receipts found.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  </div>
+<div class="table-wrap">
+<table class="receipt-table">
+  <thead>
+    <tr>
+      <th></th>
+      <th>Receipt No</th>
+      <th>Name</th>
+      <th>Date</th>
+      <th>Amount</th>
+      <th>Paid</th>
+      <th>Due</th>
+      <th>Status</th>
+      <th>QR</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in receipts %}
+    <tr>
+      <td><input type="checkbox" class="row-check" name="ids" value="{{ r.id }}"></td>
+      <td>{{ r.receipt_no }}</td>
+      <td>{{ r.name }}</td>
+      <td>{{ r.date }}</td>
+      <td>₹{{ "%.2f"|format(r.total_amount) }}</td>
+      <td>₹{{ "%.2f"|format(r.paid_amount) }}</td>
+      <td>₹{{ "%.2f"|format(r.due_amount) }}</td>
+      <td><span class="badge badge-{{ r.status|lower }}">{{ r.status }}</span></td>
+      <td>
+        <form method="post" action="{{ url_for('toggle_qr', receipt_id=r.id) }}" style="display:inline;">
+          <button type="submit" class="link-btn">{{ "Remove QR" if r.show_qr else "Add QR" }}</button>
+        </form>
+      </td>
+      <td class="actions-cell">
+        <a class="link-btn" href="{{ url_for('view_receipt', receipt_id=r.id) }}" target="_blank">View / Print</a>
+        {% if r.status != "Paid" %}
+        <button class="link-btn" onclick="openPaymentModal({{ r.id }}, '{{ r.receipt_no }}', {{ r.total_amount }}, {{ r.paid_amount }})">Update Payment</button>
+        {% endif %}
+        <a class="link-btn" href="{{ url_for('whatsapp_receipt', receipt_id=r.id) }}">WhatsApp</a>
+        <form method="post" action="{{ url_for('delete_receipt', receipt_id=r.id) }}" onsubmit="return confirm('Delete receipt {{ r.receipt_no }}? This cannot be undone.');" style="display:inline;">
+          <button type="submit" class="link-btn" style="color:#d93025;">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="10" class="empty-row">No receipts found.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
 </form>
 
 <!-- Payment update modal -->
@@ -116,6 +119,10 @@
     <button class="btn btn-outline modal-close" onclick="closePaymentModal()">Cancel</button>
   </div>
 </div>
+
+<!-- hidden forms used by the bulk action bar -->
+<form id="printSelectedForm" method="get" action="{{ url_for('print_selected') }}"></form>
+<form id="deleteSelectedForm" method="post" action="{{ url_for('delete_selected') }}"></form>
 
 <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
 {% endblock %}
