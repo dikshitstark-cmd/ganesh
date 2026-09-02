@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Print Selected Receipts</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Telugu:wght@400;600;700&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/receipt.css') }}">
+</head>
+<body>
+
+<div class="toolbar no-print">
+  <a href="{{ url_for('dashboard') }}">&larr; Back to Dashboard</a>
+  <button onclick="window.print()">🖨 Print All ({{ receipts|length }} receipts, 2 per page)</button>
+</div>
+
+{% import "_receipt_body.html" as rb %}
+{% for pair in receipts|batch(2) %}
+<div class="a4-page two-up">
+  {{ rb.receipt_body(pair[0]) }}
+  {% if pair|length > 1 %}
+    {{ rb.receipt_body(pair[1]) }}
+  {% else %}
+    <div class="receipt-half receipt-half-blank"></div>
+  {% endif %}
+</div>
+{% endfor %}
+
+</body>
+</html>
