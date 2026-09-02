@@ -53,6 +53,40 @@ nav a {
   opacity: 0.95;
 }
 nav a:hover { text-decoration: underline; }
+.nav-user {
+  margin-left: 20px;
+  font-size: 13px;
+  opacity: 0.85;
+  border-left: 1px solid rgba(255,255,255,0.4);
+  padding-left: 20px;
+}
+
+.login-wrap {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #ff8c00 0%, #d9720a 100%);
+  font-family: 'Poppins', 'Noto Sans Telugu', sans-serif;
+}
+.login-card {
+  background: white;
+  border-radius: 14px;
+  padding: 36px 32px;
+  width: 100%;
+  max-width: 360px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+}
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 18px;
+  margin-bottom: 4px;
+  color: #14315c;
+}
+.login-sub { color: #777; font-size: 13px; margin-bottom: 18px; }
+.login-btn { width: 100%; margin-top: 8px; }
 
 .page {
   max-width: 1200px;
@@ -124,6 +158,21 @@ nav a:hover { text-decoration: underline; }
   border: 1px solid var(--border);
 }
 
+.btn-danger { color: #d93025; border-color: #f4c7c3; }
+.btn-danger:hover { background: #fdeaea; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+  font-size: 14px;
+}
+.bulk-select-all { display: flex; align-items: center; gap: 6px; }
+.bulk-count { color: var(--muted); font-size: 13px; }
+
 .table-wrap {
   background: var(--card);
   border: 1px solid var(--border);
@@ -178,6 +227,8 @@ nav a:hover { text-decoration: underline; }
   gap: 16px;
 }
 .form-field-wide { grid-column: 1 / -1; }
+.checkbox-field label { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text); font-weight: 500; }
+.checkbox-field input[type="checkbox"] { width: auto; }
 .form-field label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--muted); }
 .form-field input, .form-field select, .form-field textarea {
   width: 100%;
@@ -220,65 +271,4 @@ nav a:hover { text-decoration: underline; }
 @media (max-width: 720px) {
   .stat-cards { grid-template-columns: repeat(2, 1fr); }
   .form-grid { grid-template-columns: 1fr; }
-}
-
-.nav-user { color: white; margin-left: 20px; opacity: 0.9; font-size: 13px; }
-.link-danger { color: var(--red) !important; }
-.inline-form { display: inline; }
-
-.bulk-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin-bottom: 14px;
-  padding: 10px 16px;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-}
-.bulk-toolbar label { display: flex; align-items: center; gap: 6px; font-size: 14px; }
-
-.receipt-table th.checkbox-cell,
-.receipt-table td.checkbox-cell { width: 34px; white-space: nowrap; }
-
-.toolbar-actions { display: flex; align-items: center; gap: 14px; }
-.qr-toggle { display: flex; align-items: center; gap: 6px; font-size: 13px; color: white; }
-
-/* ===== RECEIPT GAP FIX ===== */
-
-/* Main receipt container */
-.receipt,
-.receipt-page,
-.receipt-container {
-  display: block !important;
-  height: auto !important;
-  min-height: auto !important;
-}
-
-/* Remove flex spacing issues */
-.receipt,
-.receipt-page {
-  justify-content: flex-start !important;
-  align-items: flex-start !important;
-}
-
-/* Body section */
-.receipt-body {
-  margin-bottom: 10px;
-}
-
-/* Footer fix */
-.receipt-footer {
-  margin-top: 15px !important;
-}
-
-/* REMOVE auto push */
-.receipt-footer,
-.footer {
-  margin-top: 15px !important;
-}
-
-/* Prevent huge empty space */
-* {
-  max-height: none !important;
 }
