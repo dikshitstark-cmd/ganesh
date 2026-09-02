@@ -20,12 +20,13 @@
       <a href="{{ url_for('dashboard') }}">Dashboard</a>
       <a href="{{ url_for('new_receipt') }}">New Receipt</a>
       <a href="{{ url_for('bulk_upload') }}">Bulk Generate</a>
-      {% if current_user and current_user.role == 'admin' %}
-      <a href="{{ url_for('users_list') }}">Manage Users</a>
+      {% if current_role == 'admin' %}
+        <a href="{{ url_for('admin_users') }}">Manage Users</a>
       {% endif %}
-      {% if current_user %}
-      <span class="nav-user">{{ current_user.username }} ({{ current_user.role }})</span>
-      <a href="{{ url_for('logout') }}">Logout</a>
+      {% if current_username %}
+        <span class="nav-user">{{ current_username }} ({{ current_role }})</span>
+        <a href="{{ url_for('change_password') }}">Change Password</a>
+        <a href="{{ url_for('logout') }}">Logout</a>
       {% endif %}
     </nav>
   </div>
