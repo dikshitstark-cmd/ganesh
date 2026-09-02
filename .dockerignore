@@ -1,0 +1,9 @@
+venv/
+__pycache__/
+*.pyc
+receipts.db
+uploads/*
+generated/*
+.git/
+.gitignore
+README.md
