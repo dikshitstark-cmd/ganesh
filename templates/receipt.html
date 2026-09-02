@@ -15,32 +15,12 @@
 {% if not standalone %}
 <div class="toolbar no-print">
   <a href="{{ url_for('dashboard') }}">&larr; Back to Dashboard</a>
-  <div class="toolbar-actions">
-    <label class="qr-toggle">
-      <input type="checkbox" id="qrToggle"
-             {{ 'checked' if request.args.get('qr', '1') != '0' else '' }}
-             onchange="location.href = updateQrParam(this.checked)">
-      Show QR code
-    </label>
-    {% if r.status == "Paid" and not r.paid_copy %}
-    <a class="btn btn-outline" href="{{ url_for('view_receipt', receipt_id=r.id, copy='paid') }}" target="_blank">
-      Generate Paid Copy
-    </a>
-    {% endif %}
-    <button onclick="window.print()">🖨 Print / Save as PDF</button>
-  </div>
+  <button onclick="window.print()">🖨 Print / Save as PDF</button>
 </div>
-<script>
-function updateQrParam(checked) {
-  const url = new URL(window.location.href);
-  url.searchParams.set("qr", checked ? "1" : "0");
-  return url.toString();
-}
-</script>
 {% endif %}
 
 {% import "_receipt_body.html" as rb %}
-<div class="a4-page">
+<div class="a4-page single">
   {{ rb.receipt_body(r) }}
 </div>
 
