@@ -2,16 +2,37 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Error {{ code }}</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Login - Ganesh Utsav Receipts</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Telugu:wght@400;600;700&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
-<main class="page">
-  <div class="form-card" style="text-align:center; margin-top: 60px;">
-    <h1 style="color:#c0392b;">Error {{ code }}</h1>
-    <p>{{ message }}</p>
-    <a class="btn btn-primary" href="{{ url_for('dashboard') }}">Back to Dashboard</a>
+<div class="login-wrap">
+  <div class="login-card">
+    <div class="login-brand">
+      <span class="brand-om">ॐ</span>
+      <div>Ganesh Utsav <strong>Receipts</strong></div>
+    </div>
+    <p class="login-sub">Sign in to manage receipts</p>
+
+    {% if error %}
+      <div class="flash flash-error">{{ error }}</div>
+    {% endif %}
+
+    <form method="post">
+      <input type="hidden" name="next" value="{{ request.args.get('next', '') }}">
+      <div class="form-field">
+        <label>Username</label>
+        <input type="text" name="username" required autofocus>
+      </div>
+      <div class="form-field">
+        <label>Password</label>
+        <input type="password" name="password" required>
+      </div>
+      <button type="submit" class="btn btn-primary login-btn">Sign In</button>
+    </form>
   </div>
-</main>
+</div>
 </body>
 </html>
