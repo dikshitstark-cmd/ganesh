@@ -10,24 +10,30 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.security import generate_password_hash
 
 BASE_DIR = Path(__file__).resolve().parent
-
-DB_PATH = os.path.join("/tmp", "receipts.db")
+DB_PATH = Path(os.environ.get("DATABASE_PATH", str(BASE_DIR / "receipts.db")))
 
 RECEIPT_PREFIX = "GU"  # Ganesh Utsav
 
 
 def get_conn():
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 
+def _column_names(cur, table):
+    cur.execute(f"PRAGMA table_info({table})")
+    return {row[1] for row in cur.fetchall()}
+
+
 def init_db():
-    """Create tables if they don't already exist. Safe to call every startup."""
+    """Create tables if they don't already exist, and migrate older
+    databases in place by adding any newly-introduced columns. Safe to
+    call every startup."""
     conn = get_conn()
     cur = conn.cursor()
 
@@ -45,9 +51,15 @@ def init_db():
             due_amount REAL NOT NULL,
             mode TEXT NOT NULL DEFAULT 'Cash',
             status TEXT NOT NULL DEFAULT 'Unpaid',
+            show_qr INTEGER NOT NULL DEFAULT 1,
             created_at TEXT NOT NULL
         )
     """)
+    # Migration guard: databases created by an earlier version of this app
+    # won't have show_qr yet -- add it rather than requiring a fresh DB.
+    existing_cols = _column_names(cur, "receipts")
+    if "show_qr" not in existing_cols:
+        cur.execute("ALTER TABLE receipts ADD COLUMN show_qr INTEGER NOT NULL DEFAULT 1")
 
     # Persistent counter so receipt numbers never repeat/reset even if rows
     # are deleted, and survive across app restarts/years.
@@ -70,38 +82,35 @@ def init_db():
     """)
     defaults = {
         "upi_id": "ganeshutsav@upi",
-        "org_name_en": "Sri Ganesh Utsav Committee",
-        "org_name_te": "శ్రీ గణేష్ ఉత్సవ కమిటీ",
+        "org_name_en": "Sri Sri Vinayaka Utsava Committee",
+        "org_name_te": "శ్రీ శ్రీ వినాయక ఉత్సవ కమిటీ",
     }
     for k, v in defaults.items():
         cur.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (k, v))
 
-    # --- Users / authentication ------------------------------------------
+    # --- Auth: admin + sub-admin users ---
     cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
-            role TEXT NOT NULL CHECK(role IN ('admin', 'subadmin')),
+            role TEXT NOT NULL DEFAULT 'subadmin',
             created_at TEXT NOT NULL
         )
     """)
-
     conn.commit()
 
-    # Seed a default admin user the very first time the app runs, so there
-    # is always at least one account able to log in and create others.
-    # Credentials are taken from environment variables so they can (and
-    # should) be overridden in production instead of using the fallback.
+    # Seed the first admin account if no users exist yet. Credentials can
+    # be overridden via environment variables (recommended for any live
+    # deployment) -- see README "Deployment" section.
     cur.execute("SELECT COUNT(*) AS c FROM users")
     if cur.fetchone()["c"] == 0:
-        admin_username = os.environ.get("ADMIN_USERNAME", "admin")
-        admin_password = os.environ.get("ADMIN_PASSWORD", "ChangeMe@123")
-        cur.execute(
-            "INSERT INTO users (username, password_hash, role, created_at) "
-            "VALUES (?, ?, 'admin', ?)",
-            (admin_username, generate_password_hash(admin_password), datetime.now().isoformat()),
-        )
+        admin_user = os.environ.get("ADMIN_USERNAME", "admin")
+        admin_pass = os.environ.get("ADMIN_PASSWORD", "admin123")
+        cur.execute("""
+            INSERT INTO users (username, password_hash, role, created_at)
+            VALUES (?, ?, 'admin', ?)
+        """, (admin_user, generate_password_hash(admin_pass), datetime.now().isoformat()))
         conn.commit()
 
     conn.close()
@@ -136,7 +145,7 @@ def compute_status(total_amount, paid_amount):
 
 
 def create_receipt(name, address, total_amount, mode, purpose="Ganesh Chanda",
-                    phone=None, paid_amount=0.0, date=None):
+                    phone=None, paid_amount=0.0, date=None, show_qr=True):
     receipt_no = next_receipt_no()
     date = date or datetime.now().strftime("%d-%m-%Y")
     due_amount = round(float(total_amount) - float(paid_amount), 2)
@@ -147,11 +156,11 @@ def create_receipt(name, address, total_amount, mode, purpose="Ganesh Chanda",
     cur.execute("""
         INSERT INTO receipts
             (receipt_no, date, name, address, phone, purpose,
-             total_amount, paid_amount, due_amount, mode, status, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             total_amount, paid_amount, due_amount, mode, status, show_qr, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (receipt_no, date, name, address, phone, purpose,
           float(total_amount), float(paid_amount), due_amount, mode, status,
-          datetime.now().isoformat()))
+          1 if show_qr else 0, datetime.now().isoformat()))
     new_id = cur.lastrowid
     conn.commit()
     conn.close()
@@ -163,6 +172,19 @@ def get_receipt(receipt_id):
     row = conn.execute("SELECT * FROM receipts WHERE id = ?", (receipt_id,)).fetchone()
     conn.close()
     return row
+
+
+def get_receipts_by_ids(ids):
+    if not ids:
+        return []
+    conn = get_conn()
+    placeholders = ",".join("?" for _ in ids)
+    rows = conn.execute(
+        f"SELECT * FROM receipts WHERE id IN ({placeholders}) ORDER BY id",
+        ids,
+    ).fetchall()
+    conn.close()
+    return rows
 
 
 def list_receipts(search=None, status=None):
@@ -210,9 +232,27 @@ def mark_paid(receipt_id):
     return update_payment(receipt_id, receipt["total_amount"])
 
 
+def set_show_qr(receipt_id, show_qr):
+    conn = get_conn()
+    conn.execute("UPDATE receipts SET show_qr = ? WHERE id = ?",
+                 (1 if show_qr else 0, receipt_id))
+    conn.commit()
+    conn.close()
+
+
 def delete_receipt(receipt_id):
     conn = get_conn()
     conn.execute("DELETE FROM receipts WHERE id = ?", (receipt_id,))
+    conn.commit()
+    conn.close()
+
+
+def delete_receipts(ids):
+    if not ids:
+        return
+    conn = get_conn()
+    placeholders = ",".join("?" for _ in ids)
+    conn.execute(f"DELETE FROM receipts WHERE id IN ({placeholders})", ids)
     conn.commit()
     conn.close()
 
@@ -222,25 +262,14 @@ def all_receipts_as_dicts():
 
 
 # ---------------------------------------------------------------------------
-# Users / authentication
+# Users (auth)
 # ---------------------------------------------------------------------------
 
-def create_user(username, password, role):
-    if role not in ("admin", "subadmin"):
-        raise ValueError("Role must be 'admin' or 'subadmin'.")
+def get_user_by_username(username):
     conn = get_conn()
-    try:
-        cur = conn.cursor()
-        cur.execute(
-            "INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)",
-            (username, generate_password_hash(password), role, datetime.now().isoformat()),
-        )
-        conn.commit()
-        return cur.lastrowid
-    except sqlite3.IntegrityError:
-        raise ValueError(f"Username '{username}' is already taken.")
-    finally:
-        conn.close()
+    row = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+    conn.close()
+    return row
 
 
 def get_user(user_id):
@@ -250,39 +279,36 @@ def get_user(user_id):
     return row
 
 
-def get_user_by_username(username):
-    conn = get_conn()
-    row = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
-    conn.close()
-    return row
-
-
-def verify_user(username, password):
-    """Return the user row if credentials are correct, otherwise None."""
-    row = get_user_by_username(username)
-    if not row:
-        return None
-    if not check_password_hash(row["password_hash"], password):
-        return None
-    return row
-
-
 def list_users():
     conn = get_conn()
-    rows = conn.execute("SELECT id, username, role, created_at FROM users ORDER BY id").fetchall()
+    rows = conn.execute("SELECT * FROM users ORDER BY role DESC, username").fetchall()
     conn.close()
     return rows
 
 
-def count_admins():
+def create_user(username, password, role="subadmin"):
     conn = get_conn()
-    row = conn.execute("SELECT COUNT(*) AS c FROM users WHERE role = 'admin'").fetchone()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO users (username, password_hash, role, created_at)
+        VALUES (?, ?, ?, ?)
+    """, (username, generate_password_hash(password), role, datetime.now().isoformat()))
+    new_id = cur.lastrowid
+    conn.commit()
     conn.close()
-    return row["c"]
+    return new_id
 
 
 def delete_user(user_id):
     conn = get_conn()
     conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    conn.commit()
+    conn.close()
+
+
+def update_user_password(user_id, new_password):
+    conn = get_conn()
+    conn.execute("UPDATE users SET password_hash = ? WHERE id = ?",
+                 (generate_password_hash(new_password), user_id))
     conn.commit()
     conn.close()
