@@ -73,7 +73,7 @@ def init_db():
         )
     """)
     defaults = {
-        "upi_id": "ganeshutsav@upi",
+        "upi_id": "narsimhabaindla858@ybl",
         "org_name_en": "Sri Sri Vinayaka Utsava Committee",
         "org_name_te": "శ్రీ శ్రీ వినాయక ఉత్సవ కమిటీ",
     }
