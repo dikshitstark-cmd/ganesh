@@ -121,13 +121,24 @@ def get_setting(key, default=None):
 def next_receipt_no():
     conn = get_conn()
     cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) AS c FROM receipts")
-    val = cur.fetchone()["c"] + 1
+    cur.execute("SELECT receipt_no FROM receipts")
+    existing_numbers = set()
+    year = datetime.now().year
+    prefix = f"{RECEIPT_PREFIX}/{year}/"
+    for row in cur.fetchall():
+        rn = row["receipt_no"]
+        if rn.startswith(prefix):
+            try:
+                existing_numbers.add(int(rn[len(prefix):]))
+            except ValueError:
+                pass
     cur.close()
     conn.close()
-    year = datetime.now().year
-    return f"{RECEIPT_PREFIX}/{year}/{val:04d}"
 
+    val = 1
+    while val in existing_numbers:
+        val += 1
+    return f"{prefix}{val:04d}"
 
 def compute_status(total_amount, paid_amount):
     if paid_amount <= 0:
