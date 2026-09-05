@@ -121,9 +121,8 @@ def get_setting(key, default=None):
 def next_receipt_no():
     conn = get_conn()
     cur = conn.cursor()
-    cur.execute("UPDATE counters SET value = value + 1 WHERE name = 'receipt_no' RETURNING value")
-    val = cur.fetchone()["value"]
-    conn.commit()
+    cur.execute("SELECT COUNT(*) AS c FROM receipts")
+    val = cur.fetchone()["c"] + 1
     cur.close()
     conn.close()
     year = datetime.now().year
